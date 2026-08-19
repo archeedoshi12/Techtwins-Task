@@ -116,6 +116,9 @@ export default function Home() {
         </form>
 
         <p className={styles.footer}>Your data is processed securely and never shared.</p>
+        <p className={styles.footer} style={{ marginTop: 8 }}>
+          <a href="/credits" style={{ color: 'rgba(139,92,246,0.8)', textDecoration: 'none' }}>💳 Test Credits Webhook →</a>
+        </p>
       </div>
     </main>
   );
