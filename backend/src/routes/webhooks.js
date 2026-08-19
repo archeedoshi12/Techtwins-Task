@@ -43,4 +43,19 @@ router.post('/credits', async (req, res) => {
   }
 });
 
+// GET /webhooks/credits/:userId
+router.get('/credits/:userId', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, credits FROM users WHERE id = $1',
+      [req.params.userId]
+    );
+    if (!rows.length) return res.json({ userId: req.params.userId, credits: 0 });
+    return res.json({ userId: rows[0].id, credits: rows[0].credits });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;

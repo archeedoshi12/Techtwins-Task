@@ -12,6 +12,11 @@ interface WebhookResult {
   credits?: number;
 }
 
+interface Balance {
+  userId: string;
+  credits: number;
+}
+
 export default function CreditsPage() {
   const router = useRouter();
   const [form, setForm] = useState({
@@ -21,6 +26,21 @@ export default function CreditsPage() {
   });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<WebhookResult | null>(null);
+  const [balance, setBalance] = useState<Balance | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+
+  const fetchBalance = async (userId: string) => {
+    setBalanceLoading(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/webhooks/credits/${userId}`);
+      const data = await res.json();
+      setBalance(data);
+    } catch {
+      // silently fail
+    } finally {
+      setBalanceLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,6 +62,7 @@ export default function CreditsPage() {
         setResult({ status: 'error', message: data.error || 'Request failed' });
       } else {
         setResult({ ...data });
+        await fetchBalance(form.userId);
       }
     } catch {
       setResult({ status: 'error', message: 'Failed to reach server' });
@@ -124,9 +145,9 @@ export default function CreditsPage() {
         {result && (
           <div className={`${styles.result} ${resultClass}`}>
             <p className={styles.resultTitle}>
-              {result.status === 'ok' && '✅ Credits Added'}
-              {result.status === 'duplicate' && '⚠️ Duplicate Event — Credits NOT Added'}
-              {result.status === 'error' && '❌ Error'}
+              {result.status === 'ok' && ' Credits Added'}
+              {result.status === 'duplicate' && ' Duplicate Event — Credits NOT Added'}
+              {result.status === 'error' && 'Error'}
             </p>
             <pre className={styles.resultBody}>
               {JSON.stringify(result, null, 2)}
@@ -139,6 +160,26 @@ export default function CreditsPage() {
             )}
           </div>
         )}
+
+        <div className={styles.balanceSection}>
+          <div className={styles.balanceRow}>
+            <span className={styles.balanceLabel}>💰 Current Balance</span>
+            <button
+              className={styles.checkBtn}
+              type="button"
+              onClick={() => fetchBalance(form.userId)}
+              disabled={balanceLoading}
+            >
+              {balanceLoading ? '…' : 'Check'}
+            </button>
+          </div>
+          {balance && (
+            <div className={styles.balanceDisplay}>
+              <span className={styles.balanceUser}>{balance.userId}</span>
+              <span className={styles.balanceCredits}>{balance.credits} credits</span>
+            </div>
+          )}
+        </div>
 
         <p className={styles.hint}>
           Try sending the same Event ID twice to see idempotency in action.
