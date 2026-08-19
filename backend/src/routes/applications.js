@@ -24,13 +24,12 @@ router.post('/', async (req, res) => {
 
     const app = rows[0];
 
-    // Only enqueue if freshly inserted (status will be 'pending')
     if (app.status === 'pending') {
       await applicationQueue.add(
         'process',
         { applicationId: app.id },
         {
-          jobId: app.id, // BullMQ deduplicates by jobId
+          jobId: app.id,
           attempts: 3,
           backoff: { type: 'exponential', delay: 2000 },
         }

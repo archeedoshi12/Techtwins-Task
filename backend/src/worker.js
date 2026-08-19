@@ -24,14 +24,12 @@ async function startWorker() {
     async (job) => {
       const { applicationId } = job.data;
 
-      // Check if already processed (guard against duplicate job execution)
       const { rows } = await pool.query(
         'SELECT status FROM applications WHERE id = $1',
         [applicationId]
       );
       if (!rows.length || rows[0].status === 'processed') return;
 
-      // Simulate AI processing delay
       await new Promise((r) => setTimeout(r, 2000 + Math.random() * 1000));
 
       const { rows: appRows } = await pool.query(

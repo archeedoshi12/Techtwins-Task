@@ -15,7 +15,6 @@ router.post('/credits', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Idempotency: insert event; if already exists, skip
     const { rowCount } = await client.query(
       'INSERT INTO webhook_events (event_id) VALUES ($1) ON CONFLICT DO NOTHING',
       [eventId]
