@@ -4,10 +4,50 @@
 
 | Service | URL |
 |---|---|
-| Frontend | https://frontend-eta-eight-36.vercel.app |
+| Frontend — Submit Application | https://frontend-eta-eight-36.vercel.app |
+| Frontend — Credits Webhook Tester | https://frontend-eta-eight-36.vercel.app/credits |
 | Backend API | https://techtwins-task.onrender.com |
+| GitHub Repository | https://github.com/archeedoshi12/Techtwins-Task |
 
 > Note: Backend is on Render free tier — first request after inactivity may take ~50 seconds to wake up.
+
+---
+
+## What Was Built
+
+| # | Feature | Endpoint |
+|---|---|---|
+| 1 | Submit application (non-blocking) | `POST /applications` |
+| 2 | Background worker — AI skill extraction | BullMQ + Redis |
+| 3 | Status polling endpoint | `GET /applications/:id` |
+| 4 | Frontend form + live status page | Next.js App Router |
+| 5 | Credits webhook (idempotent) | `POST /webhooks/credits` |
+| 6 | Duplicate submission safety | `UNIQUE(email, resume_text)` |
+
+---
+
+## Evaluation Answers
+
+### Does the response come back fast (not blocked on processing)?
+
+Yes. `POST /applications` does two things synchronously: insert the DB row and enqueue a BullMQ job. Both are fast (~5ms). The HTTP 201 is returned immediately. The 2–3 second AI simulation runs entirely inside the worker process — the HTTP client never waits for it.
+
+### Is the webhook truly idempotent?
+
+Yes. The `webhook_events` table has `event_id TEXT PRIMARY KEY`. On every `POST /webhooks/credits` call, the handler runs inside a single transaction:
+
+1. `INSERT INTO webhook_events (event_id) ... ON CONFLICT DO NOTHING`
+2. If `rowCount === 0` → the event was already processed → return `{ status: 'duplicate' }` and rollback
+3. If `rowCount === 1` → upsert user credits atomically → commit
+
+No matter how many times the same `eventId` is retried, credits are added exactly once. The transaction ensures no partial state is possible.
+
+### Does the worker avoid double-processing?
+
+Two layers of protection:
+
+- **BullMQ jobId = applicationId** — BullMQ deduplicates jobs with the same ID in the queue, so even if `POST /applications` is called twice with the same data, only one job enters the queue.
+- **Worker status check** — before doing any work, the worker queries `SELECT status FROM applications WHERE id = $1`. If status is already `processed`, it exits immediately. This guards against edge cases where a job somehow runs twice.
 
 ---
 
@@ -21,10 +61,10 @@ applications (
   name        TEXT NOT NULL,
   email       TEXT NOT NULL,
   resume_text TEXT NOT NULL,
-  status      TEXT NOT NULL DEFAULT 'pending',   
+  status      TEXT NOT NULL DEFAULT 'pending',
   skills      TEXT[],
   created_at  TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE (email, resume_text)                     
+  UNIQUE (email, resume_text)
 )
 
 users (
@@ -33,7 +73,7 @@ users (
 )
 
 webhook_events (
-  event_id     TEXT PRIMARY KEY,                  
+  event_id     TEXT PRIMARY KEY,
   processed_at TIMESTAMPTZ DEFAULT NOW()
 )
 ```
@@ -72,7 +112,7 @@ webhook_events (
 
 ```bash
 cd backend
-cp .env .env.local   
+cp .env .env.local
 npm install
 node src/index.js &  # API server on :4000
 node src/worker.js   # BullMQ worker (separate terminal)
@@ -104,7 +144,7 @@ curl -X POST http://localhost:4000/webhooks/credits \
 
 ## Deployment
 
-Both services auto-deploy on every `git push` to `main` — no manual steps needed.
+Both services auto-deploy on every `git push` to `main`.
 
 | Service | Platform | Auto-deploy |
 |---|---|---|
@@ -130,17 +170,21 @@ NEXT_PUBLIC_API_URL = https://techtwins-task.onrender.com
 
 ---
 
-## Trade-offs
+## Trade-offs & What I'd Do Differently With More Time
 
-- **BullMQ jobId deduplication** works within the Redis TTL window. For long-lived dedup, the DB `UNIQUE` constraint is the true source of truth.
-- **Polling (2s interval)** is simple and sufficient here. WebSockets or SSE would reduce latency in production.
-- **API + Worker in one process** (`node src/index.js & node src/worker.js`) is a cost trade-off for free hosting. In production, run them as separate services.
-- **Render free tier** spins down after inactivity — first request may take ~50s to wake up.
+**Trade-offs made:**
 
-## What I'd Do Differently With More Time
+- **BullMQ jobId deduplication** works within the Redis TTL window. For long-lived dedup guarantees, the DB `UNIQUE` constraint is the true source of truth — both layers together cover all cases.
+- **Polling (2s interval)** is simple and sufficient here. WebSockets or SSE would reduce latency and server load in production.
+- **API + Worker in one Render service** (`node src/start.js` spawns both) is a cost trade-off for free hosting. In production, these should be separate services with independent scaling.
+- **Keyword matching** for skill extraction is naive by design. It's fast and deterministic, which is fine for a simulation, but not suitable for real resume parsing.
+- **No authentication** — any userId can be passed to the credits webhook. In production, webhook signatures (e.g. Stripe's `Stripe-Signature` header) would verify the caller.
+
+**With more time I would:**
 
 - Replace keyword matching with a real NLP model or LLM API call for skill extraction
 - Add WebSocket/SSE instead of polling for real-time status updates
-- Separate the worker into its own service with proper process management (PM2)
+- Separate the worker into its own service with proper process management (PM2 or a container)
 - Add request validation with Zod/Joi and proper error handling middleware
 - Add authentication so users can only see their own applications
+- Add webhook signature verification to secure the credits endpoint
