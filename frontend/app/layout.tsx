@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Application Processing System',
-  description: 'Submit and track your application',
+  description: 'track your application',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
